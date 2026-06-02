@@ -15,7 +15,7 @@ import re
 
 st.set_page_config(
     page_title="YouTube 댓글 분석기",
-    page_icon="💖",
+    page_icon="💗",
     layout="wide"
 )
 
@@ -127,7 +127,7 @@ def extract_nouns(texts):
 # UI
 # ------------------
 
-st.title("💖 YouTube 댓글 분석기")
+st.title("💗 YouTube 댓글 분석기")
 
 video_url = st.text_input(
     "유튜브 영상 링크 입력"
