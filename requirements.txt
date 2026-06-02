@@ -1,8 +1,6 @@
 streamlit
 pandas
-numpy
-matplotlib
 plotly
+matplotlib
 wordcloud
-konlpy
 google-api-python-client
