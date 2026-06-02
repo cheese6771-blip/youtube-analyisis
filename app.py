@@ -4,7 +4,6 @@ from googleapiclient.discovery import build
 from urllib.parse import urlparse, parse_qs
 from collections import Counter
 from wordcloud import WordCloud
-from konlpy.tag import Okt
 import matplotlib.pyplot as plt
 import plotly.express as px
 import re
@@ -19,7 +18,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# 연분홍색 테마
+# ------------------
+# 스타일
+# ------------------
+
 st.markdown("""
 <style>
 .stApp {
@@ -42,10 +44,20 @@ div[data-baseweb="slider"] span {
 """, unsafe_allow_html=True)
 
 # ------------------
-# API
+# API 설정
 # ------------------
 
-API_KEY = st.secrets["YOUTUBE_API_KEY"]
+API_KEY = st.secrets.get("YOUTUBE_API_KEY")
+
+if not API_KEY:
+    st.error("""
+    ⚠️ Streamlit Secrets에 YouTube API Key가 없습니다.
+
+    Settings → Secrets에 아래 형식으로 추가하세요.
+
+    YOUTUBE_API_KEY="YOUR_API_KEY"
+    """)
+    st.stop()
 
 youtube = build(
     "youtube",
@@ -70,58 +82,59 @@ def extract_video_id(url):
 def get_comments(video_id, max_comments):
 
     comments = []
-
     next_page = None
 
-    while len(comments) < max_comments:
+    try:
 
-        request = youtube.commentThreads().list(
-            part="snippet",
-            videoId=video_id,
-            maxResults=100,
-            pageToken=next_page,
-            textFormat="plainText"
-        )
+        while len(comments) < max_comments:
 
-        response = request.execute()
+            request = youtube.commentThreads().list(
+                part="snippet",
+                videoId=video_id,
+                maxResults=100,
+                pageToken=next_page,
+                textFormat="plainText"
+            )
 
-        for item in response["items"]:
+            response = request.execute()
 
-            comment = item["snippet"]["topLevelComment"]["snippet"]
+            for item in response["items"]:
 
-            comments.append({
-                "text": comment["textDisplay"],
-                "likes": comment["likeCount"],
-                "time": comment["publishedAt"]
-            })
+                comment = item["snippet"]["topLevelComment"]["snippet"]
 
-            if len(comments) >= max_comments:
+                comments.append({
+                    "text": comment["textDisplay"],
+                    "likes": comment["likeCount"],
+                    "time": comment["publishedAt"]
+                })
+
+                if len(comments) >= max_comments:
+                    break
+
+            next_page = response.get("nextPageToken")
+
+            if not next_page:
                 break
 
-        next_page = response.get("nextPageToken")
-
-        if not next_page:
-            break
+    except Exception as e:
+        st.error(f"댓글 수집 오류: {e}")
 
     return pd.DataFrame(comments)
 
 
-def extract_nouns(texts):
-
-    okt = Okt()
+def extract_keywords(texts):
 
     words = []
 
     for text in texts:
 
-        nouns = okt.nouns(str(text))
+        text = str(text)
 
-        nouns = [n for n in nouns if len(n) >= 2]
+        extracted = re.findall(r"[가-힣]{2,}", text)
 
-        words.extend(nouns)
+        words.extend(extracted)
 
     return Counter(words)
-
 
 # ------------------
 # UI
@@ -152,6 +165,10 @@ if st.button("댓글 분석 시작"):
 
         video_id = extract_video_id(video_url)
 
+        if not video_id:
+            st.error("올바른 유튜브 링크가 아닙니다.")
+            st.stop()
+
         df = get_comments(video_id, comment_count)
 
     if df.empty:
@@ -161,10 +178,12 @@ if st.button("댓글 분석 시작"):
 
     st.success(f"{len(df)}개 댓글 수집 완료!")
 
+    st.subheader("댓글 미리보기")
+
     st.dataframe(df.head())
 
     # ------------------
-    # 시간 분석
+    # 시간대 분석
     # ------------------
 
     st.header("📈 시간대별 댓글 추이")
@@ -207,12 +226,12 @@ if st.button("댓글 분석 시작"):
 
     col2.metric(
         "최대 좋아요",
-        df["likes"].max()
+        int(df["likes"].max())
     )
 
     col3.metric(
         "총 좋아요",
-        df["likes"].sum()
+        int(df["likes"].sum())
     )
 
     fig2 = px.histogram(
@@ -233,12 +252,14 @@ if st.button("댓글 분석 시작"):
 
     st.header("🔍 자주 등장하는 단어")
 
-    counter = extract_nouns(df["text"])
+    counter = extract_keywords(df["text"])
 
     top_words = pd.DataFrame(
         counter.most_common(20),
         columns=["단어", "빈도"]
     )
+
+    st.dataframe(top_words)
 
     fig3 = px.bar(
         top_words,
@@ -252,35 +273,40 @@ if st.button("댓글 분석 시작"):
         use_container_width=True
     )
 
-    st.dataframe(top_words)
-
     # ------------------
     # 워드클라우드
     # ------------------
 
     st.header("☁️ 워드클라우드")
 
-    wc = WordCloud(
-        width=1200,
-        height=600,
-        background_color="white",
-        font_path="malgun.ttf"
-    )
+    try:
 
-    wc.generate_from_frequencies(counter)
+        wc = WordCloud(
+            width=1200,
+            height=600,
+            background_color="white"
+        )
 
-    fig4, ax = plt.subplots(
-        figsize=(12,6)
-    )
+        wc.generate_from_frequencies(counter)
 
-    ax.imshow(wc)
+        fig4, ax = plt.subplots(
+            figsize=(12, 6)
+        )
 
-    ax.axis("off")
+        ax.imshow(wc)
 
-    st.pyplot(fig4)
+        ax.axis("off")
+
+        st.pyplot(fig4)
+
+    except Exception as e:
+
+        st.warning(
+            f"워드클라우드 생성 실패: {e}"
+        )
 
     # ------------------
-    # 원본 댓글
+    # 원본 데이터
     # ------------------
 
     st.header("💬 댓글 데이터")
