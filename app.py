@@ -7,6 +7,7 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import plotly.express as px
 import re
+import os
 
 # ------------------
 # 페이지 설정
@@ -19,7 +20,7 @@ st.set_page_config(
 )
 
 # ------------------
-# 스타일
+# 연분홍 UI
 # ------------------
 
 st.markdown("""
@@ -28,17 +29,18 @@ st.markdown("""
     background-color: #fff5f7;
 }
 
-h1,h2,h3 {
-    color:#e75480;
+h1, h2, h3 {
+    color: #e75480;
 }
 
-.stButton>button {
-    background-color:#ffb6c1;
-    color:black;
+.stButton > button {
+    background-color: #ffb6c1;
+    color: black;
+    border-radius: 10px;
 }
 
 div[data-baseweb="slider"] span {
-    background-color:#ff69b4 !important;
+    background-color: #ff69b4 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -51,9 +53,9 @@ API_KEY = st.secrets.get("YOUTUBE_API_KEY")
 
 if not API_KEY:
     st.error("""
-    ⚠️ Streamlit Secrets에 YouTube API Key가 없습니다.
+    YouTube API 키가 설정되지 않았습니다.
 
-    Settings → Secrets에 아래 형식으로 추가하세요.
+    Streamlit Cloud → Settings → Secrets
 
     YOUTUBE_API_KEY="YOUR_API_KEY"
     """)
@@ -72,9 +74,10 @@ youtube = build(
 def extract_video_id(url):
 
     if "youtu.be" in url:
-        return url.split("/")[-1]
+        return url.split("/")[-1].split("?")[0]
 
-    query = parse_qs(urlparse(url).query)
+    parsed_url = urlparse(url)
+    query = parse_qs(parsed_url.query)
 
     return query.get("v", [None])[0]
 
@@ -158,7 +161,7 @@ if st.button("댓글 분석 시작"):
 
     if not video_url:
 
-        st.warning("유튜브 링크를 입력하세요.")
+        st.warning("유튜브 링크를 입력해주세요.")
         st.stop()
 
     with st.spinner("댓글 수집 중..."):
@@ -166,7 +169,7 @@ if st.button("댓글 분석 시작"):
         video_id = extract_video_id(video_url)
 
         if not video_id:
-            st.error("올바른 유튜브 링크가 아닙니다.")
+            st.error("유효한 유튜브 링크가 아닙니다.")
             st.stop()
 
         df = get_comments(video_id, comment_count)
@@ -176,9 +179,13 @@ if st.button("댓글 분석 시작"):
         st.error("댓글을 가져오지 못했습니다.")
         st.stop()
 
-    st.success(f"{len(df)}개 댓글 수집 완료!")
+    st.success(f"{len(df)}개의 댓글을 수집했습니다!")
 
-    st.subheader("댓글 미리보기")
+    # ------------------
+    # 댓글 미리보기
+    # ------------------
+
+    st.header("💬 댓글 미리보기")
 
     st.dataframe(df.head())
 
@@ -189,7 +196,6 @@ if st.button("댓글 분석 시작"):
     st.header("📈 시간대별 댓글 추이")
 
     df["time"] = pd.to_datetime(df["time"])
-
     df["hour"] = df["time"].dt.hour
 
     hour_count = (
@@ -265,7 +271,7 @@ if st.button("댓글 분석 시작"):
         top_words,
         x="단어",
         y="빈도",
-        title="TOP 20 단어"
+        title="TOP 20 키워드"
     )
 
     st.plotly_chart(
@@ -281,34 +287,41 @@ if st.button("댓글 분석 시작"):
 
     try:
 
-        wc = WordCloud(
-            width=1200,
-            height=600,
-            background_color="white"
-        )
+        if not os.path.exists("NanumGothic.ttf"):
+            st.error(
+                "NanumGothic.ttf 파일을 프로젝트 루트에 업로드해주세요."
+            )
 
-        wc.generate_from_frequencies(counter)
+        else:
 
-        fig4, ax = plt.subplots(
-            figsize=(12, 6)
-        )
+            wc = WordCloud(
+                width=1400,
+                height=700,
+                background_color="white",
+                font_path="NanumGothic.ttf"
+            )
 
-        ax.imshow(wc)
+            wc.generate_from_frequencies(counter)
 
-        ax.axis("off")
+            fig4, ax = plt.subplots(
+                figsize=(14, 7)
+            )
 
-        st.pyplot(fig4)
+            ax.imshow(wc, interpolation="bilinear")
+            ax.axis("off")
+
+            st.pyplot(fig4)
 
     except Exception as e:
 
-        st.warning(
-            f"워드클라우드 생성 실패: {e}"
+        st.error(
+            f"워드클라우드 생성 오류: {e}"
         )
 
     # ------------------
-    # 원본 데이터
+    # 전체 댓글
     # ------------------
 
-    st.header("💬 댓글 데이터")
+    st.header("📄 전체 댓글 데이터")
 
     st.dataframe(df)
